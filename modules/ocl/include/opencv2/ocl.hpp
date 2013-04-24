@@ -50,7 +50,6 @@
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
 #include "opencv2/objdetect.hpp"
-#include "opencv2/features2d.hpp"
 
 namespace cv
 {
@@ -103,7 +102,7 @@ namespace cv
             ~Info();
             void release();
             Info &operator = (const Info &m);
-            std::vector<std::string> DeviceName;
+            std::vector<String> DeviceName;
         };
         //////////////////////////////// Initialization & Info ////////////////////////
         //this function may be obsoleted
@@ -125,34 +124,43 @@ namespace cv
 
         CV_EXPORTS void* getoclCommandQueue();
 
+        //explicit call clFinish. The global command queue will be used.
+        CV_EXPORTS void finish();
+
         //this function enable ocl module to use customized cl_context and cl_command_queue
         //getDevice also need to be called before this function
         CV_EXPORTS void setDeviceEx(Info &oclinfo, void *ctx, void *qu, int devnum = 0);
 
-        //////////////////////////////// Error handling ////////////////////////
-        CV_EXPORTS void error(const char *error_string, const char *file, const int line, const char *func);
-
         //////////////////////////////// OpenCL context ////////////////////////
         //This is a global singleton class used to represent a OpenCL context.
-        class Context
+        class CV_EXPORTS Context
         {
         protected:
             Context();
             friend class std::auto_ptr<Context>;
-            static std::auto_ptr<Context> clCxt;
 
+        private:
+            static std::auto_ptr<Context> clCxt;
+            static int val;
         public:
             ~Context();
-            static int val;
+            void release();
+            Info::Impl* impl;
+
             static Context *getContext();
             static void setContext(Info &oclinfo);
-            struct Impl;
-            Impl *impl;
+
+            enum {CL_DOUBLE, CL_UNIFIED_MEM};
+            bool supportsFeature(int ftype);
+            size_t computeUnits();
+            size_t maxWorkGroupSize();
+            void* oclContext();
+            void* oclCommandQueue();
         };
 
         //! Calls a kernel, by string. Pass globalThreads = NULL, and cleanUp = true, to finally clean-up without executing.
         CV_EXPORTS double openCLExecuteKernelInterop(Context *clCxt ,
-                                                        const char **source, std::string kernelName,
+                                                        const char **source, String kernelName,
                                                         size_t globalThreads[3], size_t localThreads[3],
                                                         std::vector< std::pair<size_t, const void *> > &args,
                                                         int channels, int depth, const char *build_options,
@@ -161,7 +169,7 @@ namespace cv
 
         //! Calls a kernel, by file. Pass globalThreads = NULL, and cleanUp = true, to finally clean-up without executing.
         CV_EXPORTS double openCLExecuteKernelInterop(Context *clCxt ,
-                                                        const char **fileName, const int numFiles, std::string kernelName,
+                                                        const char **fileName, const int numFiles, String kernelName,
                                                         size_t globalThreads[3], size_t localThreads[3],
                                                         std::vector< std::pair<size_t, const void *> > &args,
                                                         int channels, int depth, const char *build_options,
@@ -255,8 +263,10 @@ namespace cv
             void create(Size size, int type);
 
             //! allocates new oclMatrix with specified device memory type.
-            void createEx(int rows, int cols, int type, DevMemRW rw_type, DevMemType mem_type);
-            void createEx(Size size, int type, DevMemRW rw_type, DevMemType mem_type);
+            void createEx(int rows, int cols, int type, 
+                          DevMemRW rw_type, DevMemType mem_type, void* hptr = 0);
+            void createEx(Size size, int type, DevMemRW rw_type, 
+                          DevMemType mem_type, void* hptr = 0);
 
             //! decreases reference counter;
             // deallocate the data when reference counter reaches 0.
@@ -529,9 +539,29 @@ namespace cv
         CV_EXPORTS oclMatExpr operator * (const oclMat &src1, const oclMat &src2);
         CV_EXPORTS oclMatExpr operator / (const oclMat &src1, const oclMat &src2);
 
-        //! computes convolution of two images
+        struct CV_EXPORTS ConvolveBuf
+        {
+            Size result_size;
+            Size block_size;
+            Size user_block_size;
+            Size dft_size;
+
+            oclMat image_spect, templ_spect, result_spect;
+            oclMat image_block, templ_block, result_data;
+
+            void create(Size image_size, Size templ_size);
+            static Size estimateBlockSize(Size result_size, Size templ_size);
+        };
+
+        //! computes convolution of two images, may use discrete Fourier transform
         //! support only CV_32FC1 type
-        CV_EXPORTS void convolve(const oclMat &image, const oclMat &temp1, oclMat &result);
+        CV_EXPORTS void convolve(const oclMat &image, const oclMat &temp1, oclMat &result, bool ccorr = false);
+        CV_EXPORTS void convolve(const oclMat &image, const oclMat &temp1, oclMat &result, bool ccorr, ConvolveBuf& buf);
+
+        //! Performs a per-element multiplication of two Fourier spectrums.
+        //! Only full (not packed) CV_32FC2 complex spectrums in the interleaved format are supported for now.
+        //! support only CV_32FC2 type
+        CV_EXPORTS void mulSpectrums(const oclMat &a, const oclMat &b, oclMat &c, int flags, float scale, bool conjB = false);
 
         CV_EXPORTS void cvtColor(const oclMat &src, oclMat &dst, int code , int dcn = 0);
 
@@ -780,7 +810,8 @@ namespace cv
         ///////////////////////////////////////////CascadeClassifier//////////////////////////////////////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        class CV_EXPORTS_W OclCascadeClassifier : public  cv::CascadeClassifier
+#if 0
+        class CV_EXPORTS OclCascadeClassifier : public  cv::CascadeClassifier
         {
         public:
             OclCascadeClassifier() {};
@@ -789,6 +820,7 @@ namespace cv
             CvSeq* oclHaarDetectObjects(oclMat &gimg, CvMemStorage *storage, double scaleFactor,
                                         int minNeighbors, int flags, CvSize minSize = cvSize(0, 0), CvSize maxSize = cvSize(0, 0));
         };
+#endif
 
 
 
@@ -830,68 +862,36 @@ namespace cv
 
 
         ///////////////////////////////////////////// Canny /////////////////////////////////////////////
-
         struct CV_EXPORTS CannyBuf;
 
-
-
         //! compute edges of the input image using Canny operator
-
         // Support CV_8UC1 only
-
         CV_EXPORTS void Canny(const oclMat &image, oclMat &edges, double low_thresh, double high_thresh, int apperture_size = 3, bool L2gradient = false);
-
         CV_EXPORTS void Canny(const oclMat &image, CannyBuf &buf, oclMat &edges, double low_thresh, double high_thresh, int apperture_size = 3, bool L2gradient = false);
-
         CV_EXPORTS void Canny(const oclMat &dx, const oclMat &dy, oclMat &edges, double low_thresh, double high_thresh, bool L2gradient = false);
-
         CV_EXPORTS void Canny(const oclMat &dx, const oclMat &dy, CannyBuf &buf, oclMat &edges, double low_thresh, double high_thresh, bool L2gradient = false);
 
-
-
         struct CV_EXPORTS CannyBuf
-
         {
-
             CannyBuf() : counter(NULL) {}
-
             ~CannyBuf()
             {
                 release();
             }
-
             explicit CannyBuf(const Size &image_size, int apperture_size = 3) : counter(NULL)
-
             {
-
                 create(image_size, apperture_size);
-
             }
-
             CannyBuf(const oclMat &dx_, const oclMat &dy_);
-
-
-
             void create(const Size &image_size, int apperture_size = 3);
-
-
-
             void release();
 
-
-
             oclMat dx, dy;
-
             oclMat dx_buf, dy_buf;
-
-            oclMat edgeBuf;
-
+            oclMat magBuf, mapBuf;
             oclMat trackBuf1, trackBuf2;
-
             void *counter;
-
             Ptr<FilterEngine_GPU> filterDX, filterDY;
-
         };
 
         ///////////////////////////////////////// Hough Transform /////////////////////////////////////////
@@ -1087,156 +1087,6 @@ namespace cv
 
         };
 
-
-
-        //! Speeded up robust features, port from GPU module.
-        ////////////////////////////////// SURF //////////////////////////////////////////
-
-        class CV_EXPORTS SURF_OCL
-
-        {
-
-        public:
-
-            enum KeypointLayout
-
-            {
-
-                X_ROW = 0,
-
-                Y_ROW,
-
-                LAPLACIAN_ROW,
-
-                OCTAVE_ROW,
-
-                SIZE_ROW,
-
-                ANGLE_ROW,
-
-                HESSIAN_ROW,
-
-                ROWS_COUNT
-
-            };
-
-
-
-            //! the default constructor
-
-            SURF_OCL();
-
-            //! the full constructor taking all the necessary parameters
-
-            explicit SURF_OCL(double _hessianThreshold, int _nOctaves = 4,
-
-                              int _nOctaveLayers = 2, bool _extended = false, float _keypointsRatio = 0.01f, bool _upright = false);
-
-
-
-            //! returns the descriptor size in float's (64 or 128)
-
-            int descriptorSize() const;
-
-
-
-            //! upload host keypoints to device memory
-
-            void uploadKeypoints(const std::vector<cv::KeyPoint> &keypoints, oclMat &keypointsocl);
-
-            //! download keypoints from device to host memory
-
-            void downloadKeypoints(const oclMat &keypointsocl, std::vector<KeyPoint> &keypoints);
-
-
-
-            //! download descriptors from device to host memory
-
-            void downloadDescriptors(const oclMat &descriptorsocl, std::vector<float> &descriptors);
-
-
-
-            //! finds the keypoints using fast hessian detector used in SURF
-
-            //! supports CV_8UC1 images
-
-            //! keypoints will have nFeature cols and 6 rows
-
-            //! keypoints.ptr<float>(X_ROW)[i] will contain x coordinate of i'th feature
-
-            //! keypoints.ptr<float>(Y_ROW)[i] will contain y coordinate of i'th feature
-
-            //! keypoints.ptr<float>(LAPLACIAN_ROW)[i] will contain laplacian sign of i'th feature
-
-            //! keypoints.ptr<float>(OCTAVE_ROW)[i] will contain octave of i'th feature
-
-            //! keypoints.ptr<float>(SIZE_ROW)[i] will contain size of i'th feature
-
-            //! keypoints.ptr<float>(ANGLE_ROW)[i] will contain orientation of i'th feature
-
-            //! keypoints.ptr<float>(HESSIAN_ROW)[i] will contain response of i'th feature
-
-            void operator()(const oclMat &img, const oclMat &mask, oclMat &keypoints);
-
-            //! finds the keypoints and computes their descriptors.
-
-            //! Optionally it can compute descriptors for the user-provided keypoints and recompute keypoints direction
-
-            void operator()(const oclMat &img, const oclMat &mask, oclMat &keypoints, oclMat &descriptors,
-
-                            bool useProvidedKeypoints = false);
-
-
-
-            void operator()(const oclMat &img, const oclMat &mask, std::vector<KeyPoint> &keypoints);
-
-            void operator()(const oclMat &img, const oclMat &mask, std::vector<KeyPoint> &keypoints, oclMat &descriptors,
-
-                            bool useProvidedKeypoints = false);
-
-
-
-            void operator()(const oclMat &img, const oclMat &mask, std::vector<KeyPoint> &keypoints, std::vector<float> &descriptors,
-
-                            bool useProvidedKeypoints = false);
-
-
-
-            void releaseMemory();
-
-
-
-            // SURF parameters
-
-            float hessianThreshold;
-
-            int nOctaves;
-
-            int nOctaveLayers;
-
-            bool extended;
-
-            bool upright;
-
-
-
-            //! max keypoints = min(keypointsRatio * img.size().area(), 65535)
-
-            float keypointsRatio;
-
-
-
-            oclMat sum, mask1, maskSum, intBuffer;
-
-
-
-            oclMat det, trace;
-
-
-
-            oclMat maxPosBuffer;
-
-        };
 
         ////////////////////////feature2d_ocl/////////////////
         /****************************************************************************************\
@@ -1821,6 +1671,70 @@ namespace cv
 
         //! computes moments of the rasterized shape or a vector of points
         CV_EXPORTS Moments ocl_moments(InputArray _array, bool binaryImage);
+
+        class CV_EXPORTS StereoBM_OCL
+        {
+        public:
+            enum { BASIC_PRESET = 0, PREFILTER_XSOBEL = 1 };
+
+            enum { DEFAULT_NDISP = 64, DEFAULT_WINSZ = 19 };
+
+            //! the default constructor
+            StereoBM_OCL();
+            //! the full constructor taking the camera-specific preset, number of disparities and the SAD window size. ndisparities must be multiple of 8.
+            StereoBM_OCL(int preset, int ndisparities = DEFAULT_NDISP, int winSize = DEFAULT_WINSZ);
+
+            //! the stereo correspondence operator. Finds the disparity for the specified rectified stereo pair
+            //! Output disparity has CV_8U type.
+            void operator() ( const oclMat &left, const oclMat &right, oclMat &disparity);
+
+            //! Some heuristics that tries to estmate
+            // if current GPU will be faster then CPU in this algorithm.
+            // It queries current active device.
+            static bool checkIfGpuCallReasonable();
+
+            int preset;
+            int ndisp;
+            int winSize;
+
+            // If avergeTexThreshold  == 0 => post procesing is disabled
+            // If avergeTexThreshold != 0 then disparity is set 0 in each point (x,y) where for left image
+            // SumOfHorizontalGradiensInWindow(x, y, winSize) < (winSize * winSize) * avergeTexThreshold
+            // i.e. input left image is low textured.
+            float avergeTexThreshold;
+        private:
+            oclMat minSSD, leBuf, riBuf;
+        };
+        class CV_EXPORTS StereoBeliefPropagation
+        {
+        public:
+            enum { DEFAULT_NDISP  = 64 };
+            enum { DEFAULT_ITERS  = 5  };
+            enum { DEFAULT_LEVELS = 5  };
+            static void estimateRecommendedParams(int width, int height, int &ndisp, int &iters, int &levels);
+            explicit StereoBeliefPropagation(int ndisp  = DEFAULT_NDISP,
+                                             int iters  = DEFAULT_ITERS,
+                                             int levels = DEFAULT_LEVELS,
+                                             int msg_type = CV_16S);
+            StereoBeliefPropagation(int ndisp, int iters, int levels,
+                                    float max_data_term, float data_weight,
+                                    float max_disc_term, float disc_single_jump,
+                                    int msg_type = CV_32F);
+            void operator()(const oclMat &left, const oclMat &right, oclMat &disparity);
+            void operator()(const oclMat &data, oclMat &disparity);
+            int ndisp;
+            int iters;
+            int levels;
+            float max_data_term;
+            float data_weight;
+            float max_disc_term;
+            float disc_single_jump;
+            int msg_type;
+        private:
+            oclMat u, d, l, r, u2, d2, l2, r2;
+            std::vector<oclMat> datas;
+            oclMat out;
+        };
     }
 }
 #if defined _MSC_VER && _MSC_VER >= 1200

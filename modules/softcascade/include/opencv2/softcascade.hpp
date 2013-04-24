@@ -45,22 +45,26 @@
 
 #include "opencv2/core.hpp"
 #include "opencv2/core/gpumat.hpp"
+#include <ostream>
 
 namespace cv { namespace softcascade {
 
 // Representation of detectors result.
+// We assume that image is less then 2^16x2^16.
 struct CV_EXPORTS Detection
 {
-    // Default object type.
-    enum {PEDESTRIAN = 1};
-
     // Creates Detection from an object bounding box and confidence.
     // Param b is a bounding box
     // Param c is a confidence that object belongs to class k
     // Param k is an object class
-    Detection(const cv::Rect& b, const float c, int k = PEDESTRIAN) : bb(b), confidence(c), kind(k) {}
+    Detection(const cv::Rect& b, const float c, int k = PEDESTRIAN);
+    cv::Rect bb() const;
+    enum {PEDESTRIAN = 1};
 
-    cv::Rect bb;
+    ushort x;
+    ushort y;
+    ushort w;
+    ushort h;
     float confidence;
     int kind;
 };
@@ -106,7 +110,7 @@ public:
 
     float operator() (const cv::Mat& integrals, const cv::Size& model) const;
 
-    friend void write(cv::FileStorage& fs, const std::string&, const ChannelFeature& f);
+    friend void write(cv::FileStorage& fs, const String&, const ChannelFeature& f);
     friend std::ostream& operator<<(std::ostream& out, const ChannelFeature& f);
 
 private:
@@ -114,7 +118,7 @@ private:
     int channel;
 };
 
-void write(cv::FileStorage& fs, const std::string&, const ChannelFeature& f);
+void write(cv::FileStorage& fs, const String&, const ChannelFeature& f);
 std::ostream& operator<<(std::ostream& out, const ChannelFeature& m);
 
 // ========================================================================== //
@@ -127,12 +131,12 @@ public:
     virtual ~ChannelFeatureBuilder();
 
     // apply channels to source frame
-    CV_WRAP_AS(compute) virtual void operator()(InputArray src, CV_OUT OutputArray channels, cv::Size channelsSize = cv::Size()) const = 0;
+    CV_WRAP_AS(compute) virtual void operator()(InputArray src, OutputArray channels, cv::Size channelsSize = cv::Size()) const = 0;
 
     CV_WRAP virtual int totalChannels() const = 0;
     virtual cv::AlgorithmInfo* info() const = 0;
 
-    CV_WRAP static cv::Ptr<ChannelFeatureBuilder> create(const std::string& featureType);
+    CV_WRAP static cv::Ptr<ChannelFeatureBuilder> create(const String& featureType);
 };
 
 // ========================================================================== //
@@ -170,7 +174,7 @@ public:
 
     // Param rects is an output array of bounding rectangles for detected objects.
     // Param confs is an output array of confidence for detected objects. i-th bounding rectangle corresponds i-th confidence.
-    CV_WRAP virtual void detect(InputArray image, InputArray rois, CV_OUT OutputArray rects, CV_OUT OutputArray confs) const;
+    CV_WRAP virtual void detect(InputArray image, InputArray rois, OutputArray rects, OutputArray confs) const;
 
 private:
     void detectNoRoi(const Mat& image, std::vector<Detection>& objects) const;
@@ -208,7 +212,7 @@ public:
     virtual bool train(const Dataset* dataset, const FeaturePool* pool, int weaks, int treeDepth) = 0;
     virtual void setRejectThresholds(OutputArray thresholds) = 0;
     virtual void write( cv::FileStorage &fs, const FeaturePool* pool, InputArray thresholds) const = 0;
-    virtual void write( CvFileStorage* fs, std::string name) const = 0;
+    virtual void write( CvFileStorage* fs, String name) const = 0;
 };
 
 CV_EXPORTS bool initModule_softcascade(void);
@@ -246,19 +250,6 @@ protected:
 class CV_EXPORTS SCascade : public cv::Algorithm
 {
 public:
-
-    // Representation of detectors result.
-    struct CV_EXPORTS Detection
-    {
-        ushort x;
-        ushort y;
-        ushort w;
-        ushort h;
-        float confidence;
-        int kind;
-
-        enum {PEDESTRIAN = 0};
-    };
 
     enum { NO_REJECT = 1, DOLLAR = 2, /*PASCAL = 4,*/ DEFAULT = NO_REJECT, NMS_MASK = 0xF};
 

@@ -41,13 +41,16 @@
 #ifndef __OPENCV_ML_HPP__
 #define __OPENCV_ML_HPP__
 
-#include "opencv2/core.hpp"
+#ifdef __cplusplus
+#  include "opencv2/core.hpp"
+#endif
+
+#include "opencv2/core/core_c.h"
 #include <limits.h>
 
 #ifdef __cplusplus
 
 #include <map>
-#include <string>
 #include <iostream>
 
 // Apple defines a check() macro somewhere in the debug headers
@@ -536,6 +539,8 @@ protected:
 
     virtual void write_params( CvFileStorage* fs ) const;
     virtual void read_params( CvFileStorage* fs, CvFileNode* node );
+
+    void optimize_linear_svm();
 
     CvSVMParams params;
     CvMat* class_labels;
@@ -1041,7 +1046,7 @@ public:
     CvForestTree* get_tree(int i) const;
 
 protected:
-    virtual std::string getName() const;
+    virtual cv::String getName() const;
 
     virtual bool grow_forest( const CvTermCriteria term_crit );
 
@@ -1113,7 +1118,7 @@ public:
                        CvRTParams params=CvRTParams());
     virtual bool train( CvMLData* data, CvRTParams params=CvRTParams() );
 protected:
-    virtual std::string getName() const;
+    virtual cv::String getName() const;
     virtual bool grow_forest( const CvTermCriteria term_crit );
 };
 
@@ -2070,7 +2075,7 @@ public:
     void set_miss_ch( char ch );
     char get_miss_ch() const;
 
-    const std::map<std::string, int>& get_class_labels_map() const;
+    const std::map<cv::String, int>& get_class_labels_map() const;
 
 protected:
     virtual void clear();
@@ -2099,7 +2104,7 @@ protected:
     bool mix;
 
     int total_class_count;
-    std::map<std::string, int> class_map;
+    std::map<cv::String, int> class_map;
 
     CvMat* train_sample_idx;
     CvMat* test_sample_idx;
