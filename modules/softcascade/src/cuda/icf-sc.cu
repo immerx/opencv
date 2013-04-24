@@ -43,26 +43,9 @@
 #include <cuda_invoker.hpp>
 #include <float.h>
 #include <stdio.h>
+#include "opencv2/core/cuda/common.hpp"
 
-namespace cv { namespace softcascade { namespace internal {
-void error(const char *error_string, const char *file, const int line, const char *func);
-}}}
-#if defined(__GNUC__)
-    #define cudaSafeCall(expr)  ___cudaSafeCall(expr, __FILE__, __LINE__, __func__)
-#else /* defined(__CUDACC__) || defined(__MSVC__) */
-    #define cudaSafeCall(expr)  ___cudaSafeCall(expr, __FILE__, __LINE__)
-#endif
-
-static inline void ___cudaSafeCall(cudaError_t err, const char *file, const int line, const char *func = "")
-{
-    if (cudaSuccess != err) cv::softcascade::internal::error(cudaGetErrorString(err), file, line, func);
-}
-
-#ifndef CV_PI
-    #define CV_PI   3.1415926535897932384626433832795
-#endif
-
-namespace cv { namespace softcascade { namespace device {
+namespace cv { namespace softcascade { namespace cudev {
 
 typedef unsigned char uchar;
 
@@ -82,8 +65,8 @@ typedef unsigned char uchar;
     }
 
     template<int FACTOR>
-    __global__ void shrink(const uchar* __restrict__ hogluv, const int inPitch,
-                                 uchar* __restrict__ shrank, const int outPitch )
+    __global__ void shrink(const uchar* __restrict__ hogluv, const size_t inPitch,
+                                 uchar* __restrict__ shrank, const size_t outPitch )
     {
         const int y = blockIdx.y * blockDim.y + threadIdx.y;
         const int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -127,7 +110,7 @@ typedef unsigned char uchar;
         __v = static_cast<uchar>((V + 140.f) * (255.f / (122.f + 140.f )));
     }
 
-    __global__ void bgr2Luv_d(const uchar* rgb, const int rgbPitch, uchar* luvg, const int luvgPitch)
+    __global__ void bgr2Luv_d(const uchar* rgb, const size_t rgbPitch, uchar* luvg, const size_t luvgPitch)
     {
         const int y = blockIdx.y * blockDim.y + threadIdx.y;
         const int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -256,8 +239,8 @@ typedef unsigned char uchar;
 
     // ToDo: use textures or uncached load instruction.
     __global__ void magToHist(const uchar* __restrict__ mag,
-                              const float* __restrict__ angle, const int angPitch,
-                                    uchar* __restrict__ hog,   const int hogPitch, const int fh)
+                              const float* __restrict__ angle, const size_t angPitch,
+                                    uchar* __restrict__ hog,   const size_t hogPitch, const int fh)
     {
         const int y = blockIdx.y * blockDim.y + threadIdx.y;
         const int x = blockIdx.x * blockDim.x + threadIdx.x;

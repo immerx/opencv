@@ -22,7 +22,7 @@
 //
 //   * Redistribution's in binary form must reproduce the above copyright notice,
 //     this list of conditions and the following disclaimer in the documentation
-//     and/or other GpuMaterials provided with the distribution.
+//     and/or other materials provided with the distribution.
 //
 //   * The name of the copyright holders may not be used to endorse or promote products
 //     derived from this software without specific prior written permission.
@@ -491,6 +491,26 @@ CV_EXPORTS void reprojectImageTo3D(const GpuMat& disp, GpuMat& xyzw, const Mat& 
 //! converts image from one color space to another
 CV_EXPORTS void cvtColor(const GpuMat& src, GpuMat& dst, int code, int dcn = 0, Stream& stream = Stream::Null());
 
+enum
+{
+    // Bayer Demosaicing (Malvar, He, and Cutler)
+    COLOR_BayerBG2BGR_MHT = 256,
+    COLOR_BayerGB2BGR_MHT = 257,
+    COLOR_BayerRG2BGR_MHT = 258,
+    COLOR_BayerGR2BGR_MHT = 259,
+
+    COLOR_BayerBG2RGB_MHT = COLOR_BayerRG2BGR_MHT,
+    COLOR_BayerGB2RGB_MHT = COLOR_BayerGR2BGR_MHT,
+    COLOR_BayerRG2RGB_MHT = COLOR_BayerBG2BGR_MHT,
+    COLOR_BayerGR2RGB_MHT = COLOR_BayerGB2BGR_MHT,
+
+    COLOR_BayerBG2GRAY_MHT = 260,
+    COLOR_BayerGB2GRAY_MHT = 261,
+    COLOR_BayerRG2GRAY_MHT = 262,
+    COLOR_BayerGR2GRAY_MHT = 263
+};
+CV_EXPORTS void demosaicing(const GpuMat& src, GpuMat& dst, int code, int dcn = -1, Stream& stream = Stream::Null());
+
 //! swap channels
 //! dstOrder - Integer array describing how channel values are permutated. The n-th entry
 //!            of the array contains the number of the channel that is stored in the n-th channel of
@@ -894,10 +914,20 @@ CV_EXPORTS void histRange(const GpuMat& src, GpuMat hist[4], const GpuMat levels
 //! Calculates histogram for 8u one channel image
 //! Output hist will have one row, 256 cols and CV32SC1 type.
 CV_EXPORTS void calcHist(const GpuMat& src, GpuMat& hist, Stream& stream = Stream::Null());
+CV_EXPORTS void calcHist(const GpuMat& src, GpuMat& hist, GpuMat& buf, Stream& stream = Stream::Null());
 
 //! normalizes the grayscale image brightness and contrast by normalizing its histogram
 CV_EXPORTS void equalizeHist(const GpuMat& src, GpuMat& dst, Stream& stream = Stream::Null());
+CV_EXPORTS void equalizeHist(const GpuMat& src, GpuMat& dst, GpuMat& hist, Stream& stream = Stream::Null());
 CV_EXPORTS void equalizeHist(const GpuMat& src, GpuMat& dst, GpuMat& hist, GpuMat& buf, Stream& stream = Stream::Null());
+
+class CV_EXPORTS CLAHE : public cv::CLAHE
+{
+public:
+    using cv::CLAHE::apply;
+    virtual void apply(InputArray src, OutputArray dst, Stream& stream) = 0;
+};
+CV_EXPORTS Ptr<cv::gpu::CLAHE> createCLAHE(double clipLimit = 40.0, Size tileGridSize = Size(8, 8));
 
 //////////////////////////////// StereoBM_GPU ////////////////////////////////
 
@@ -1362,11 +1392,11 @@ class CV_EXPORTS CascadeClassifier_GPU
 {
 public:
     CascadeClassifier_GPU();
-    CascadeClassifier_GPU(const std::string& filename);
+    CascadeClassifier_GPU(const String& filename);
     ~CascadeClassifier_GPU();
 
     bool empty() const;
-    bool load(const std::string& filename);
+    bool load(const String& filename);
     void release();
 
     /* returns number of detected objects */
@@ -1384,82 +1414,6 @@ private:
     struct HaarCascade;
     struct LbpCascade;
     friend class CascadeClassifier_GPU_LBP;
-};
-
-////////////////////////////////// SURF //////////////////////////////////////////
-
-class CV_EXPORTS SURF_GPU
-{
-public:
-    enum KeypointLayout
-    {
-        X_ROW = 0,
-        Y_ROW,
-        LAPLACIAN_ROW,
-        OCTAVE_ROW,
-        SIZE_ROW,
-        ANGLE_ROW,
-        HESSIAN_ROW,
-        ROWS_COUNT
-    };
-
-    //! the default constructor
-    SURF_GPU();
-    //! the full constructor taking all the necessary parameters
-    explicit SURF_GPU(double _hessianThreshold, int _nOctaves=4,
-         int _nOctaveLayers=2, bool _extended=false, float _keypointsRatio=0.01f, bool _upright = false);
-
-    //! returns the descriptor size in float's (64 or 128)
-    int descriptorSize() const;
-
-    //! upload host keypoints to device memory
-    static void uploadKeypoints(const std::vector<KeyPoint>& keypoints, GpuMat& keypointsGPU);
-    //! download keypoints from device to host memory
-    static void downloadKeypoints(const GpuMat& keypointsGPU, std::vector<KeyPoint>& keypoints);
-
-    //! download descriptors from device to host memory
-    static void downloadDescriptors(const GpuMat& descriptorsGPU, std::vector<float>& descriptors);
-
-    //! finds the keypoints using fast hessian detector used in SURF
-    //! supports CV_8UC1 images
-    //! keypoints will have nFeature cols and 6 rows
-    //! keypoints.ptr<float>(X_ROW)[i] will contain x coordinate of i'th feature
-    //! keypoints.ptr<float>(Y_ROW)[i] will contain y coordinate of i'th feature
-    //! keypoints.ptr<float>(LAPLACIAN_ROW)[i] will contain laplacian sign of i'th feature
-    //! keypoints.ptr<float>(OCTAVE_ROW)[i] will contain octave of i'th feature
-    //! keypoints.ptr<float>(SIZE_ROW)[i] will contain size of i'th feature
-    //! keypoints.ptr<float>(ANGLE_ROW)[i] will contain orientation of i'th feature
-    //! keypoints.ptr<float>(HESSIAN_ROW)[i] will contain response of i'th feature
-    void operator()(const GpuMat& img, const GpuMat& mask, GpuMat& keypoints);
-    //! finds the keypoints and computes their descriptors.
-    //! Optionally it can compute descriptors for the user-provided keypoints and recompute keypoints direction
-    void operator()(const GpuMat& img, const GpuMat& mask, GpuMat& keypoints, GpuMat& descriptors,
-        bool useProvidedKeypoints = false);
-
-    void operator()(const GpuMat& img, const GpuMat& mask, std::vector<KeyPoint>& keypoints);
-    void operator()(const GpuMat& img, const GpuMat& mask, std::vector<KeyPoint>& keypoints, GpuMat& descriptors,
-        bool useProvidedKeypoints = false);
-
-    void operator()(const GpuMat& img, const GpuMat& mask, std::vector<KeyPoint>& keypoints, std::vector<float>& descriptors,
-        bool useProvidedKeypoints = false);
-
-    void releaseMemory();
-
-    // SURF parameters
-    double hessianThreshold;
-    int nOctaves;
-    int nOctaveLayers;
-    bool extended;
-    bool upright;
-
-    //! max keypoints = min(keypointsRatio * img.size().area(), 65535)
-    float keypointsRatio;
-
-    GpuMat sum, mask1, maskSum, intBuffer;
-
-    GpuMat det, trace;
-
-    GpuMat maxPosBuffer;
 };
 
 ////////////////////////////////// FAST //////////////////////////////////////////
@@ -1856,6 +1810,8 @@ public:
      */
     int iterations;
 
+    double scaleStep;
+
     bool useInitialFlow;
 
 private:
@@ -2129,41 +2085,6 @@ private:
     GpuMat bgmodelUsedModes_; //keep track of number of modes per pixel
 };
 
-/*!
- * The class implements the following algorithm:
- * "ViBe: A universal background subtraction algorithm for video sequences"
- * O. Barnich and M. Van D Roogenbroeck
- * IEEE Transactions on Image Processing, 20(6) :1709-1724, June 2011
- */
-class CV_EXPORTS VIBE_GPU
-{
-public:
-    //! the default constructor
-    explicit VIBE_GPU(unsigned long rngSeed = 1234567);
-
-    //! re-initiaization method
-    void initialize(const GpuMat& firstFrame, Stream& stream = Stream::Null());
-
-    //! the update operator
-    void operator()(const GpuMat& frame, GpuMat& fgmask, Stream& stream = Stream::Null());
-
-    //! releases all inner buffers
-    void release();
-
-    int nbSamples;         // number of samples per pixel
-    int reqMatches;        // #_min
-    int radius;            // R
-    int subsamplingFactor; // amount of random subsampling
-
-private:
-    Size frameSize_;
-
-    unsigned long rngSeed_;
-    GpuMat randStates_;
-
-    GpuMat samples_;
-};
-
 /**
  * Background Subtractor module. Takes a series of images and returns a sequence of mask (8UC1)
  * images of the same size, where 255 indicates Foreground and 0 represents Background.
@@ -2259,15 +2180,15 @@ public:
     };
 
     VideoWriter_GPU();
-    VideoWriter_GPU(const std::string& fileName, cv::Size frameSize, double fps, SurfaceFormat format = SF_BGR);
-    VideoWriter_GPU(const std::string& fileName, cv::Size frameSize, double fps, const EncoderParams& params, SurfaceFormat format = SF_BGR);
+    VideoWriter_GPU(const String& fileName, cv::Size frameSize, double fps, SurfaceFormat format = SF_BGR);
+    VideoWriter_GPU(const String& fileName, cv::Size frameSize, double fps, const EncoderParams& params, SurfaceFormat format = SF_BGR);
     VideoWriter_GPU(const cv::Ptr<EncoderCallBack>& encoderCallback, cv::Size frameSize, double fps, SurfaceFormat format = SF_BGR);
     VideoWriter_GPU(const cv::Ptr<EncoderCallBack>& encoderCallback, cv::Size frameSize, double fps, const EncoderParams& params, SurfaceFormat format = SF_BGR);
     ~VideoWriter_GPU();
 
     // all methods throws cv::Exception if error occurs
-    void open(const std::string& fileName, cv::Size frameSize, double fps, SurfaceFormat format = SF_BGR);
-    void open(const std::string& fileName, cv::Size frameSize, double fps, const EncoderParams& params, SurfaceFormat format = SF_BGR);
+    void open(const String& fileName, cv::Size frameSize, double fps, SurfaceFormat format = SF_BGR);
+    void open(const String& fileName, cv::Size frameSize, double fps, const EncoderParams& params, SurfaceFormat format = SF_BGR);
     void open(const cv::Ptr<EncoderCallBack>& encoderCallback, cv::Size frameSize, double fps, SurfaceFormat format = SF_BGR);
     void open(const cv::Ptr<EncoderCallBack>& encoderCallback, cv::Size frameSize, double fps, const EncoderParams& params, SurfaceFormat format = SF_BGR);
 
@@ -2299,10 +2220,10 @@ public:
         int       DisableSPSPPS;   //    NVVE_DISABLE_SPS_PPS
 
         EncoderParams();
-        explicit EncoderParams(const std::string& configFile);
+        explicit EncoderParams(const String& configFile);
 
-        void load(const std::string& configFile);
-        void save(const std::string& configFile) const;
+        void load(const String& configFile);
+        void save(const String& configFile) const;
     };
 
     EncoderParams getParams() const;
@@ -2390,12 +2311,12 @@ public:
     class VideoSource;
 
     VideoReader_GPU();
-    explicit VideoReader_GPU(const std::string& filename);
+    explicit VideoReader_GPU(const String& filename);
     explicit VideoReader_GPU(const cv::Ptr<VideoSource>& source);
 
     ~VideoReader_GPU();
 
-    void open(const std::string& filename);
+    void open(const String& filename);
     void open(const cv::Ptr<VideoSource>& source);
     bool isOpened() const;
 

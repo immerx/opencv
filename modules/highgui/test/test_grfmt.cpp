@@ -113,7 +113,7 @@ public:
                         imwrite(img_path, img);
 
                         ts->printf(ts->LOG, "reading test image : %s\n", img_path.c_str());
-                        Mat img_test = imread(img_path, CV_LOAD_IMAGE_UNCHANGED);
+                        Mat img_test = imread(img_path, IMREAD_UNCHANGED);
 
                         if (img_test.empty()) ts->set_failed_test_info(ts->FAIL_MISMATCH);
 
@@ -140,11 +140,11 @@ public:
 
                     string filename = cv::tempfile(".jpg");
                     imwrite(filename, img);
-                    img = imread(filename, CV_LOAD_IMAGE_UNCHANGED);
+                    img = imread(filename, IMREAD_UNCHANGED);
 
                     filename = string(ts->get_data_path() + "readwrite/test_" + char(k + 48) + "_c" + char(num_channels + 48) + ".jpg");
                     ts->printf(ts->LOG, "reading test image : %s\n", filename.c_str());
-                    Mat img_test = imread(filename, CV_LOAD_IMAGE_UNCHANGED);
+                    Mat img_test = imread(filename, IMREAD_UNCHANGED);
 
                     if (img_test.empty()) ts->set_failed_test_info(ts->FAIL_MISMATCH);
 
@@ -171,7 +171,7 @@ public:
                     string filename = cv::tempfile(".tiff");
                     imwrite(filename, img);
                     ts->printf(ts->LOG, "reading test image : %s\n", filename.c_str());
-                    Mat img_test = imread(filename, CV_LOAD_IMAGE_UNCHANGED);
+                    Mat img_test = imread(filename, IMREAD_UNCHANGED);
 
                     if (img_test.empty()) ts->set_failed_test_info(ts->FAIL_MISMATCH);
 
@@ -242,12 +242,12 @@ public:
             Mat im = Mat::zeros(1000,1000, CV_8U);
             //randu(im, 0, 256);
             vector<int> param;
-            param.push_back(CV_IMWRITE_PNG_COMPRESSION);
+            param.push_back(IMWRITE_PNG_COMPRESSION);
             param.push_back(3); //default(3) 0-9.
             cv::imencode(".png" ,im ,buff, param);
 
             // hangs
-            Mat im2 = imdecode(buff,CV_LOAD_IMAGE_ANYDEPTH);
+            Mat im2 = imdecode(buff,IMREAD_ANYDEPTH);
         }
         catch(...)
         {
@@ -373,7 +373,9 @@ TEST(Highgui_WebP, encode_decode_lossless_webp)
         }
     }
 
-    cv::Mat decode = cv::imdecode(buf, CV_LOAD_IMAGE_COLOR);
+    remove(output.c_str());
+
+    cv::Mat decode = cv::imdecode(buf, IMREAD_COLOR);
     ASSERT_FALSE(decode.empty());
     EXPECT_TRUE(cv::norm(decode, img_webp, NORM_INF) == 0);
 
@@ -389,37 +391,18 @@ TEST(Highgui_WebP, encode_decode_lossy_webp)
     cv::Mat img = cv::imread(input);
     ASSERT_FALSE(img.empty());
 
-    for(int q = 100; q>=0; q-=5)
+    for(int q = 100; q>=0; q-=10)
     {
         std::vector<int> params;
-        params.push_back(CV_IMWRITE_WEBP_QUALITY);
+        params.push_back(IMWRITE_WEBP_QUALITY);
         params.push_back(q);
         string output = cv::tempfile(".webp");
 
         EXPECT_NO_THROW(cv::imwrite(output, img, params));
         cv::Mat img_webp = cv::imread(output);
+        remove(output.c_str());
         EXPECT_FALSE(img_webp.empty());
     }
-}
-
-TEST(Highgui_WebP, encode_big_image_webp)
-{
-    cvtest::TS& ts = *cvtest::TS::ptr();
-    std::string input = std::string(ts.get_data_path()) + "/../cv/shared/lena.png";
-    cv::Mat img = cv::imread(input);
-    cv::resize(img, img, cv::Size(8192, 8192));
-
-    std::vector<int> params;
-    params.push_back(CV_IMWRITE_WEBP_QUALITY);
-    params.push_back(95);
-
-    std::string output = cv::tempfile(".webp");
-    EXPECT_NO_THROW(cv::imwrite(output, img, params));
-
-    img.create(10000, 10000, CV_8UC3);
-    cv::randu(img, 0, 256);
-    output = cv::tempfile(".webp");
-    EXPECT_NO_THROW(cv::imwrite(output, img));
 }
 
 #endif

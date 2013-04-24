@@ -1,4 +1,4 @@
-#/usr/bin/env python
+#!/usr/bin/env python
 
 import os, sys, re, string
 
@@ -335,7 +335,7 @@ class CppHeaderParser(object):
                 if pos >= 0:
                     aname = arg[pos+1:].strip()
                     atype = arg[:pos+1].strip()
-                    if aname.endswith("&") or aname.endswith("*") or (aname in ["int", "string", "Mat"]):
+                    if aname.endswith("&") or aname.endswith("*") or (aname in ["int", "String", "Mat"]):
                         atype = (atype + " " + aname).strip()
                         aname = ""
                 else:
@@ -400,7 +400,7 @@ class CppHeaderParser(object):
         # note that we do not strip "static" prefix, which does matter;
         # it means class methods, not instance methods
         decl_str = self.batch_replace(decl_str, [("virtual", ""), ("static inline", ""), ("inline", ""),\
-            ("CV_EXPORTS_W", ""), ("CV_EXPORTS", ""), ("CV_CDECL", ""), ("CV_WRAP ", " "), ("static CV_INLINE", ""), ("CV_INLINE", "")]).strip()
+            ("CV_EXPORTS_W", ""), ("CV_EXPORTS", ""), ("CV_CDECL", ""), ("CV_WRAP ", " "), ("CV_INLINE", "")]).strip()
 
         static_method = False
         context = top[0]

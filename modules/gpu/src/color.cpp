@@ -47,25 +47,29 @@ using namespace cv::gpu;
 
 #if !defined (HAVE_CUDA) || defined (CUDA_DISABLER)
 
-void cv::gpu::cvtColor(const GpuMat&, GpuMat&, int, int, Stream&) { throw_nogpu(); }
-void cv::gpu::swapChannels(GpuMat&, const int[], Stream&) { throw_nogpu(); }
-void cv::gpu::gammaCorrection(const GpuMat&, GpuMat&, bool, Stream&) { throw_nogpu(); }
+void cv::gpu::cvtColor(const GpuMat&, GpuMat&, int, int, Stream&) { throw_no_cuda(); }
+void cv::gpu::demosaicing(const GpuMat&, GpuMat&, int, int, Stream&) { throw_no_cuda(); }
+void cv::gpu::swapChannels(GpuMat&, const int[], Stream&) { throw_no_cuda(); }
+void cv::gpu::gammaCorrection(const GpuMat&, GpuMat&, bool, Stream&) { throw_no_cuda(); }
 
 #else /* !defined (HAVE_CUDA) */
 
 #include "cvt_color_internal.h"
 
 namespace cv { namespace gpu {
-    namespace device
+    namespace cudev
     {
         template <int cn>
         void Bayer2BGR_8u_gpu(PtrStepSzb src, PtrStepSzb dst, bool blue_last, bool start_with_green, cudaStream_t stream);
         template <int cn>
         void Bayer2BGR_16u_gpu(PtrStepSzb src, PtrStepSzb dst, bool blue_last, bool start_with_green, cudaStream_t stream);
+
+        template <int cn>
+        void MHCdemosaic(PtrStepSzb src, int2 sourceOffset, PtrStepSzb dst, int2 firstRed, cudaStream_t stream);
     }
 }}
 
-using namespace ::cv::gpu::device;
+using namespace ::cv::gpu::cudev;
 
 namespace
 {
@@ -73,7 +77,7 @@ namespace
 
     void bgr_to_rgb(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {bgr_to_rgb_8u, 0, bgr_to_rgb_16u, 0, 0, bgr_to_rgb_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -86,7 +90,7 @@ namespace
 
     void bgr_to_bgra(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {bgr_to_bgra_8u, 0, bgr_to_bgra_16u, 0, 0, bgr_to_bgra_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -99,7 +103,7 @@ namespace
 
     void bgr_to_rgba(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {bgr_to_rgba_8u, 0, bgr_to_rgba_16u, 0, 0, bgr_to_rgba_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -112,7 +116,7 @@ namespace
 
     void bgra_to_bgr(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {bgra_to_bgr_8u, 0, bgra_to_bgr_16u, 0, 0, bgra_to_bgr_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -125,7 +129,7 @@ namespace
 
     void bgra_to_rgb(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {bgra_to_rgb_8u, 0, bgra_to_rgb_16u, 0, 0, bgra_to_rgb_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -138,7 +142,7 @@ namespace
 
     void bgra_to_rgba(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {bgra_to_rgba_8u, 0, bgra_to_rgba_16u, 0, 0, bgra_to_rgba_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -156,7 +160,7 @@ namespace
 
         dst.create(src.size(), CV_8UC2);
 
-        device::bgr_to_bgr555(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr_to_bgr555(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgr_to_bgr565(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -166,7 +170,7 @@ namespace
 
         dst.create(src.size(), CV_8UC2);
 
-        device::bgr_to_bgr565(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr_to_bgr565(src, dst, StreamAccessor::getStream(stream));
     }
 
     void rgb_to_bgr555(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -176,7 +180,7 @@ namespace
 
         dst.create(src.size(), CV_8UC2);
 
-        device::rgb_to_bgr555(src, dst, StreamAccessor::getStream(stream));
+        cudev::rgb_to_bgr555(src, dst, StreamAccessor::getStream(stream));
     }
 
     void rgb_to_bgr565(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -186,7 +190,7 @@ namespace
 
         dst.create(src.size(), CV_8UC2);
 
-        device::rgb_to_bgr565(src, dst, StreamAccessor::getStream(stream));
+        cudev::rgb_to_bgr565(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgra_to_bgr555(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -196,7 +200,7 @@ namespace
 
         dst.create(src.size(), CV_8UC2);
 
-        device::bgra_to_bgr555(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgra_to_bgr555(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgra_to_bgr565(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -206,7 +210,7 @@ namespace
 
         dst.create(src.size(), CV_8UC2);
 
-        device::bgra_to_bgr565(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgra_to_bgr565(src, dst, StreamAccessor::getStream(stream));
     }
 
     void rgba_to_bgr555(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -216,7 +220,7 @@ namespace
 
         dst.create(src.size(), CV_8UC2);
 
-        device::rgba_to_bgr555(src, dst, StreamAccessor::getStream(stream));
+        cudev::rgba_to_bgr555(src, dst, StreamAccessor::getStream(stream));
     }
 
     void rgba_to_bgr565(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -226,7 +230,7 @@ namespace
 
         dst.create(src.size(), CV_8UC2);
 
-        device::rgba_to_bgr565(src, dst, StreamAccessor::getStream(stream));
+        cudev::rgba_to_bgr565(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgr555_to_rgb(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -236,7 +240,7 @@ namespace
 
         dst.create(src.size(), CV_8UC3);
 
-        device::bgr555_to_rgb(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr555_to_rgb(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgr565_to_rgb(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -246,7 +250,7 @@ namespace
 
         dst.create(src.size(), CV_8UC3);
 
-        device::bgr565_to_rgb(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr565_to_rgb(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgr555_to_bgr(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -256,7 +260,7 @@ namespace
 
         dst.create(src.size(), CV_8UC3);
 
-        device::bgr555_to_bgr(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr555_to_bgr(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgr565_to_bgr(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -266,7 +270,7 @@ namespace
 
         dst.create(src.size(), CV_8UC3);
 
-        device::bgr565_to_bgr(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr565_to_bgr(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgr555_to_rgba(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -276,7 +280,7 @@ namespace
 
         dst.create(src.size(), CV_8UC4);
 
-        device::bgr555_to_rgba(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr555_to_rgba(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgr565_to_rgba(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -286,7 +290,7 @@ namespace
 
         dst.create(src.size(), CV_8UC4);
 
-        device::bgr565_to_rgba(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr565_to_rgba(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgr555_to_bgra(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -296,7 +300,7 @@ namespace
 
         dst.create(src.size(), CV_8UC4);
 
-        device::bgr555_to_bgra(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr555_to_bgra(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgr565_to_bgra(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -306,12 +310,12 @@ namespace
 
         dst.create(src.size(), CV_8UC4);
 
-        device::bgr565_to_bgra(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr565_to_bgra(src, dst, StreamAccessor::getStream(stream));
     }
 
     void gray_to_bgr(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {gray_to_bgr_8u, 0, gray_to_bgr_16u, 0, 0, gray_to_bgr_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -324,7 +328,7 @@ namespace
 
     void gray_to_bgra(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {gray_to_bgra_8u, 0, gray_to_bgra_16u, 0, 0, gray_to_bgra_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -342,7 +346,7 @@ namespace
 
         dst.create(src.size(), CV_8UC2);
 
-        device::gray_to_bgr555(src, dst, StreamAccessor::getStream(stream));
+        cudev::gray_to_bgr555(src, dst, StreamAccessor::getStream(stream));
     }
 
     void gray_to_bgr565(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -352,7 +356,7 @@ namespace
 
         dst.create(src.size(), CV_8UC2);
 
-        device::gray_to_bgr565(src, dst, StreamAccessor::getStream(stream));
+        cudev::gray_to_bgr565(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgr555_to_gray(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -362,7 +366,7 @@ namespace
 
         dst.create(src.size(), CV_8UC1);
 
-        device::bgr555_to_gray(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr555_to_gray(src, dst, StreamAccessor::getStream(stream));
     }
 
     void bgr565_to_gray(const GpuMat& src, GpuMat& dst, int, Stream& stream)
@@ -372,12 +376,12 @@ namespace
 
         dst.create(src.size(), CV_8UC1);
 
-        device::bgr565_to_gray(src, dst, StreamAccessor::getStream(stream));
+        cudev::bgr565_to_gray(src, dst, StreamAccessor::getStream(stream));
     }
 
     void rgb_to_gray(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {rgb_to_gray_8u, 0, rgb_to_gray_16u, 0, 0, rgb_to_gray_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -390,7 +394,7 @@ namespace
 
     void bgr_to_gray(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {bgr_to_gray_8u, 0, bgr_to_gray_16u, 0, 0, bgr_to_gray_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -403,7 +407,7 @@ namespace
 
     void rgba_to_gray(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {rgba_to_gray_8u, 0, rgba_to_gray_16u, 0, 0, rgba_to_gray_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -416,7 +420,7 @@ namespace
 
     void bgra_to_gray(const GpuMat& src, GpuMat& dst, int, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[] = {bgra_to_gray_8u, 0, bgra_to_gray_16u, 0, 0, bgra_to_gray_32f};
 
         CV_Assert(src.depth() == CV_8U || src.depth() == CV_16U || src.depth() == CV_32F);
@@ -429,7 +433,7 @@ namespace
 
     void rgb_to_yuv(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -455,7 +459,7 @@ namespace
 
     void bgr_to_yuv(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -481,7 +485,7 @@ namespace
 
     void yuv_to_rgb(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -507,7 +511,7 @@ namespace
 
     void yuv_to_bgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -533,7 +537,7 @@ namespace
 
     void rgb_to_YCrCb(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -559,7 +563,7 @@ namespace
 
     void bgr_to_YCrCb(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -585,7 +589,7 @@ namespace
 
     void YCrCb_to_rgb(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -611,7 +615,7 @@ namespace
 
     void YCrCb_to_bgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -637,7 +641,7 @@ namespace
 
     void rgb_to_xyz(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -663,7 +667,7 @@ namespace
 
     void bgr_to_xyz(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -689,7 +693,7 @@ namespace
 
     void xyz_to_rgb(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -715,7 +719,7 @@ namespace
 
     void xyz_to_bgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -741,7 +745,7 @@ namespace
 
     void rgb_to_hsv(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -767,7 +771,7 @@ namespace
 
     void bgr_to_hsv(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -793,7 +797,7 @@ namespace
 
     void hsv_to_rgb(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -819,7 +823,7 @@ namespace
 
     void hsv_to_bgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -845,7 +849,7 @@ namespace
 
     void rgb_to_hls(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -871,7 +875,7 @@ namespace
 
     void bgr_to_hls(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -897,7 +901,7 @@ namespace
 
     void hls_to_rgb(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -923,7 +927,7 @@ namespace
 
     void hls_to_bgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -949,7 +953,7 @@ namespace
 
     void rgb_to_hsv_full(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -975,7 +979,7 @@ namespace
 
     void bgr_to_hsv_full(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -1001,7 +1005,7 @@ namespace
 
     void hsv_to_rgb_full(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -1027,7 +1031,7 @@ namespace
 
     void hsv_to_bgr_full(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -1053,7 +1057,7 @@ namespace
 
     void rgb_to_hls_full(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -1079,7 +1083,7 @@ namespace
 
     void bgr_to_hls_full(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -1105,7 +1109,7 @@ namespace
 
     void hls_to_rgb_full(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -1131,7 +1135,7 @@ namespace
 
     void hls_to_bgr_full(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][6] =
         {
             {
@@ -1157,7 +1161,7 @@ namespace
 
     void bgr_to_lab(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1183,7 +1187,7 @@ namespace
 
     void rgb_to_lab(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1209,7 +1213,7 @@ namespace
 
     void lbgr_to_lab(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1235,7 +1239,7 @@ namespace
 
     void lrgb_to_lab(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1261,7 +1265,7 @@ namespace
 
     void lab_to_bgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1287,7 +1291,7 @@ namespace
 
     void lab_to_rgb(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1313,7 +1317,7 @@ namespace
 
     void lab_to_lbgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1339,7 +1343,7 @@ namespace
 
     void lab_to_lrgb(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1365,7 +1369,7 @@ namespace
 
     void bgr_to_luv(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1391,7 +1395,7 @@ namespace
 
     void rgb_to_luv(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1417,7 +1421,7 @@ namespace
 
     void lbgr_to_luv(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1443,7 +1447,7 @@ namespace
 
     void lrgb_to_luv(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1469,7 +1473,7 @@ namespace
 
     void luv_to_bgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1495,7 +1499,7 @@ namespace
 
     void luv_to_rgb(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1521,7 +1525,7 @@ namespace
 
     void luv_to_lbgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1547,7 +1551,7 @@ namespace
 
     void luv_to_lrgb(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
-        using namespace cv::gpu::device;
+        using namespace cv::gpu::cudev;
         static const gpu_func_t funcs[2][2][2] =
         {
             {
@@ -1620,25 +1624,55 @@ namespace
 
         funcs[src.depth()][dcn - 1](src, dst, blue_last, start_with_green, StreamAccessor::getStream(stream));
     }
-
     void bayerBG_to_bgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
         bayer_to_bgr(src, dst, dcn, false, false, stream);
     }
-
     void bayerGB_to_bgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
         bayer_to_bgr(src, dst, dcn, false, true, stream);
     }
-
     void bayerRG_to_bgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
         bayer_to_bgr(src, dst, dcn, true, false, stream);
     }
-
     void bayerGR_to_bgr(const GpuMat& src, GpuMat& dst, int dcn, Stream& stream)
     {
         bayer_to_bgr(src, dst, dcn, true, true, stream);
+    }
+
+    void bayer_to_gray(const GpuMat& src, GpuMat& dst, bool blue_last, bool start_with_green, Stream& stream)
+    {
+        typedef void (*func_t)(PtrStepSzb src, PtrStepSzb dst, bool blue_last, bool start_with_green, cudaStream_t stream);
+        static const func_t funcs[3] =
+        {
+            Bayer2BGR_8u_gpu<1>,
+            0,
+            Bayer2BGR_16u_gpu<1>,
+        };
+
+        CV_Assert(src.type() == CV_8UC1 || src.type() == CV_16UC1);
+        CV_Assert(src.rows > 2 && src.cols > 2);
+
+        dst.create(src.size(), CV_MAKETYPE(src.depth(), 1));
+
+        funcs[src.depth()](src, dst, blue_last, start_with_green, StreamAccessor::getStream(stream));
+    }
+    void bayerBG_to_gray(const GpuMat& src, GpuMat& dst, int /*dcn*/, Stream& stream)
+    {
+        bayer_to_gray(src, dst, false, false, stream);
+    }
+    void bayerGB_to_gray(const GpuMat& src, GpuMat& dst, int /*dcn*/, Stream& stream)
+    {
+        bayer_to_gray(src, dst, false, true, stream);
+    }
+    void bayerRG_to_gray(const GpuMat& src, GpuMat& dst, int /*dcn*/, Stream& stream)
+    {
+        bayer_to_gray(src, dst, true, false, stream);
+    }
+    void bayerGR_to_gray(const GpuMat& src, GpuMat& dst, int /*dcn*/, Stream& stream)
+    {
+        bayer_to_gray(src, dst, true, true, stream);
     }
 }
 
@@ -1756,10 +1790,10 @@ void cv::gpu::cvtColor(const GpuMat& src, GpuMat& dst, int code, int dcn, Stream
         yuv_to_bgr,             // CV_YUV2BGR      = 84
         yuv_to_rgb,             // CV_YUV2RGB      = 85
 
-        0,                      // CV_BayerBG2GRAY = 86
-        0,                      // CV_BayerGB2GRAY = 87
-        0,                      // CV_BayerRG2GRAY = 88
-        0,                      // CV_BayerGR2GRAY = 89
+        bayerBG_to_gray,        // CV_BayerBG2GRAY = 86
+        bayerGB_to_gray,        // CV_BayerGB2GRAY = 87
+        bayerRG_to_gray,        // CV_BayerRG2GRAY = 88
+        bayerGR_to_gray,        // CV_BayerGR2GRAY = 89
 
         //YUV 4:2:0 formats family
         0,                      // CV_YUV2RGB_NV12 = 90,
@@ -1820,9 +1854,77 @@ void cv::gpu::cvtColor(const GpuMat& src, GpuMat& dst, int code, int dcn, Stream
     func_t func = funcs[code];
 
     if (func == 0)
-        CV_Error( CV_StsBadFlag, "Unknown/unsupported color conversion code" );
+        CV_Error( cv::Error::StsBadFlag, "Unknown/unsupported color conversion code" );
 
     func(src, dst, dcn, stream);
+}
+
+void cv::gpu::demosaicing(const GpuMat& src, GpuMat& dst, int code, int dcn, Stream& stream)
+{
+    const int depth = src.depth();
+
+    CV_Assert( src.channels() == 1 );
+
+    switch (code)
+    {
+    case cv::COLOR_BayerBG2GRAY: case cv::COLOR_BayerGB2GRAY: case cv::COLOR_BayerRG2GRAY: case cv::COLOR_BayerGR2GRAY:
+        bayer_to_gray(src, dst, code == cv::COLOR_BayerBG2GRAY || code == cv::COLOR_BayerGB2GRAY, code == cv::COLOR_BayerGB2GRAY || code == cv::COLOR_BayerGR2GRAY, stream);
+        break;
+
+    case cv::COLOR_BayerBG2BGR: case cv::COLOR_BayerGB2BGR: case cv::COLOR_BayerRG2BGR: case cv::COLOR_BayerGR2BGR:
+        bayer_to_bgr(src, dst, dcn, code == cv::COLOR_BayerBG2BGR || code == cv::COLOR_BayerGB2BGR, code == cv::COLOR_BayerGB2BGR || code == cv::COLOR_BayerGR2BGR, stream);
+        break;
+
+    case COLOR_BayerBG2BGR_MHT: case COLOR_BayerGB2BGR_MHT: case COLOR_BayerRG2BGR_MHT: case COLOR_BayerGR2BGR_MHT:
+    {
+        if (dcn <= 0)
+            dcn = 3;
+
+        CV_Assert( depth == CV_8U );
+        CV_Assert( dcn == 3 || dcn == 4 );
+
+        dst.create(src.size(), CV_MAKETYPE(depth, dcn));
+        dst.setTo(Scalar::all(0));
+
+        Size wholeSize;
+        Point ofs;
+        src.locateROI(wholeSize, ofs);
+        PtrStepSzb srcWhole(wholeSize.height, wholeSize.width, src.datastart, src.step);
+
+        const int2 firstRed = make_int2(code == COLOR_BayerRG2BGR_MHT || code == COLOR_BayerGB2BGR_MHT ? 0 : 1,
+                                        code == COLOR_BayerRG2BGR_MHT || code == COLOR_BayerGR2BGR_MHT ? 0 : 1);
+
+        if (dcn == 3)
+            cudev::MHCdemosaic<3>(srcWhole, make_int2(ofs.x, ofs.y), dst, firstRed, StreamAccessor::getStream(stream));
+        else
+            cudev::MHCdemosaic<4>(srcWhole, make_int2(ofs.x, ofs.y), dst, firstRed, StreamAccessor::getStream(stream));
+
+        break;
+    }
+
+    case COLOR_BayerBG2GRAY_MHT: case COLOR_BayerGB2GRAY_MHT: case COLOR_BayerRG2GRAY_MHT: case COLOR_BayerGR2GRAY_MHT:
+    {
+        CV_Assert( depth == CV_8U );
+
+        dst.create(src.size(), CV_MAKETYPE(depth, 1));
+        dst.setTo(Scalar::all(0));
+
+        Size wholeSize;
+        Point ofs;
+        src.locateROI(wholeSize, ofs);
+        PtrStepSzb srcWhole(wholeSize.height, wholeSize.width, src.datastart, src.step);
+
+        const int2 firstRed = make_int2(code == COLOR_BayerRG2BGR_MHT || code == COLOR_BayerGB2BGR_MHT ? 0 : 1,
+                                        code == COLOR_BayerRG2BGR_MHT || code == COLOR_BayerGR2BGR_MHT ? 0 : 1);
+
+        cudev::MHCdemosaic<1>(srcWhole, make_int2(ofs.x, ofs.y), dst, firstRed, StreamAccessor::getStream(stream));
+
+        break;
+    }
+
+    default:
+        CV_Error( cv::Error::StsBadFlag, "Unknown / unsupported color conversion code" );
+    }
 }
 
 void cv::gpu::swapChannels(GpuMat& image, const int dstOrder[4], Stream& s)
@@ -1850,7 +1952,7 @@ void cv::gpu::gammaCorrection(const GpuMat& src, GpuMat& dst, bool forward, Stre
     (void)dst;
     (void)forward;
     (void)stream;
-    CV_Error( CV_StsNotImplemented, "This function works only with CUDA 5.0 or higher" );
+    CV_Error( cv::Error::StsNotImplemented, "This function works only with CUDA 5.0 or higher" );
 #else
     typedef NppStatus (*func_t)(const Npp8u* pSrc, int nSrcStep, Npp8u* pDst, int nDstStep, NppiSize oSizeROI);
     typedef NppStatus (*func_inplace_t)(Npp8u* pSrcDst, int nSrcDstStep, NppiSize oSizeROI);
